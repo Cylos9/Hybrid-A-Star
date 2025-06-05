@@ -122,7 +122,7 @@ def reedsSheppNode(currentNode, goalNode, mapParameters):
     radius = math.tan(Car.maxSteerAngle)/Car.wheelBase
 
     #  Find all possible reeds-shepp paths between current and goal node
-    reedsSheppPaths = rsCurve.calc_all_paths(startX, startY, startYaw, goalX, goalY, goalYaw, radius, 1)
+    reedsSheppPaths = rsCurve.calc_all_paths(startX, startY, startYaw, goalX, goalY, goalYaw, radius, mapParameters.xyResolution)
 
     # Check if reedsSheppPaths is empty
     if not reedsSheppPaths:
