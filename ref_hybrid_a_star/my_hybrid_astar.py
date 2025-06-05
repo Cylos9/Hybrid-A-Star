@@ -21,7 +21,7 @@ class C:  # Parameter config
 
     XY_RESO = 0.2  # [m]
     YAW_RESO = np.deg2rad(15.0)  # [rad]
-    MOVE_STEP = 0.2  # [m] path interporate resolution
+    MOVE_STEP = 0.1  # [m] path interporate resolution
     N_STEER = 20.0  # steer command number
     MAX_ANGULAR_VELOCITY = 0.5   # [rad/s] maximum angular velocity
     MIN_ANGULAR_VELOCITY = -0.5  # [rad/s] minimum angular velocity
@@ -31,8 +31,7 @@ class C:  # Parameter config
 
     GEAR_COST = 100.0  # switch back penalty cost
     BACKWARD_COST = 50.0  # backward penalty cost
-    STEER_CHANGE_COST = 5.0  # steer angle change penalty cost
-    STEER_ANGLE_COST = 1.0  # steer angle penalty cost
+    ANGULAR_VELOCITY_CHANGE_COST = 5.0  # angular velocity change penalty cost
     H_COST = 15.0  # Heuristic cost penalty cost
 
     RADIUS = 0.4 # [m] radius of vehicle
@@ -282,12 +281,12 @@ def calc_next_node(n_curr, c_id, u, d, P):
     nlist = math.ceil(step / C.MOVE_STEP)
     xlist = [n_curr.x[-1] + d * C.MOVE_STEP * math.cos(n_curr.yaw[-1])]
     ylist = [n_curr.y[-1] + d * C.MOVE_STEP * math.sin(n_curr.yaw[-1])]
-    yawlist = [rs.pi_2_pi(n_curr.yaw[-1] + d * C.MOVE_STEP / C.WB * math.tan(u))]
+    yawlist = [rs.pi_2_pi(n_curr.yaw[-1] + d * C.MOVE_STEP * u)]
 
     for i in range(nlist - 1):
         xlist.append(xlist[i] + d * C.MOVE_STEP * math.cos(yawlist[i]))
         ylist.append(ylist[i] + d * C.MOVE_STEP * math.sin(yawlist[i]))
-        yawlist.append(rs.pi_2_pi(yawlist[i] + d * C.MOVE_STEP / C.WB * math.tan(u)))
+        yawlist.append(rs.pi_2_pi(yawlist[i] + d * C.MOVE_STEP * u))
 
     xind = round(xlist[-1] / P.xyreso)
     yind = round(ylist[-1] / P.xyreso)
@@ -308,8 +307,7 @@ def calc_next_node(n_curr, c_id, u, d, P):
     if direction != n_curr.direction:  # switch back penalty
         cost += C.GEAR_COST
 
-    cost += C.STEER_ANGLE_COST * abs(u)  # steer angle penalyty
-    cost += C.STEER_CHANGE_COST * abs(n_curr.steer - u)  # steer change penalty
+    cost += C.ANGULAR_VELOCITY_CHANGE_COST * abs(n_curr.steer - u)  # velocity change penalty
     cost = n_curr.cost + cost
 
     directions = [direction for _ in range(len(xlist))]
@@ -392,9 +390,10 @@ def analystic_expantion(node, ngoal, P):
 
 def is_collision(x, y, yaw, P):
     for ix, iy, iyaw in zip(x, y, yaw):
-        d = 1
+        car_length = C.RF + C.RB
+        safety_margin = P.xyreso
+        r = max(car_length / 2.0, C.W / 2.0) + safety_margin
         dl = (C.RF - C.RB) / 2.0
-        r = (C.RF + C.RB) / 2.0 + d
 
         cx = ix + dl * math.cos(iyaw)
         cy = iy + dl * math.sin(iyaw)
@@ -410,11 +409,10 @@ def is_collision(x, y, yaw, P):
             dx = xo * math.cos(iyaw) + yo * math.sin(iyaw)
             dy = -xo * math.sin(iyaw) + yo * math.cos(iyaw)
 
-            if abs(dx) < r and abs(dy) < C.W / 2 + d:
+            if abs(dx) < r  and abs(dy) < C.W / 2 + safety_margin:
                 return True
 
     return False
-
 
 def calc_rs_path_cost(rspath):
     cost = 0.0
