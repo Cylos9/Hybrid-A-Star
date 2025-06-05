@@ -21,18 +21,17 @@ class C:  # Parameter config
 
     XY_RESO = 0.2  # [m]
     YAW_RESO = np.deg2rad(15.0)  # [rad]
-    MOVE_STEP = 0.1  # [m] path interporate resolution
-    N_STEER = 20.0  # steer command number
+    MOVE_STEP = 0.2  # [m] path interporate resolution
+    N_STEER = 10.0  # steer command number
     MAX_ANGULAR_VELOCITY = 0.5   # [rad/s] maximum angular velocity
     MIN_ANGULAR_VELOCITY = -0.5  # [rad/s] minimum angular velocity
-    MAX_CURVATURE_RADIUS = 1.0  # [m] maximum curvature radius
-    COLLISION_CHECK_STEP = 5  # skip number for collision check for reeds-shepp path
-    EXTEND_BOUND = 1  # collision check range extended
+    MAX_CURVATURE_RADIUS = 0.5  # [m] maximum curvature radius
+    COLLISION_CHECK_STEP = 2    # skip number for collision check
 
     GEAR_COST = 100.0  # switch back penalty cost
     BACKWARD_COST = 50.0  # backward penalty cost
-    ANGULAR_VELOCITY_CHANGE_COST = 5.0  # angular velocity change penalty cost
-    H_COST = 15.0  # Heuristic cost penalty cost
+    ANGULAR_VELOCITY_CHANGE_COST = 2.0  # angular velocity change penalty cost
+    H_COST = 10.0  # Heuristic cost penalty cost
 
     RADIUS = 0.4 # [m] radius of vehicle
     RF = 0.6  # [m] distance from rear to vehicle front end of vehicle
@@ -210,6 +209,7 @@ def hybrid_astar_planning(sx, sy, syaw, gx, gy, gyaw, ox_grid, oy_grid, xyreso, 
     qp = QueuePrior()
     qp.put(calc_index(nstart, P), calc_hybrid_cost(nstart, hmap, P))
 
+    count = 1
     while True:
         if not open_set:
             return None
@@ -222,6 +222,7 @@ def hybrid_astar_planning(sx, sy, syaw, gx, gy, gyaw, ox_grid, oy_grid, xyreso, 
         update, fpath = update_node_with_analystic_expantion(n_curr, ngoal, P)
 
         if update:
+            print(f"found Reeds-Shepp path in {count} iterations")
             fnode = fpath
             break
 
@@ -243,7 +244,7 @@ def hybrid_astar_planning(sx, sy, syaw, gx, gy, gyaw, ox_grid, oy_grid, xyreso, 
                 if open_set[node_ind].cost > node.cost:
                     open_set[node_ind] = node
                     qp.put(node_ind, calc_hybrid_cost(node, hmap, P))
-
+        count += 1
     return extract_path(closed_set, fnode, nstart)
 
 
@@ -561,16 +562,21 @@ def generate_obstacle_in_grid_map():
     center_of_map = [round((rectangle_grid_index[0] + rectangle_grid_index[1])/2), round((rectangle_grid_index[2] + rectangle_grid_index[3])/2)]
 
     for i in range(rectangle_grid_index[2]+1, round(center_of_map[1]+1)):
-        obstacleX.append(center_of_map[0])
+        obstacleX.append(center_of_map[0]+2)
         obstacleY.append(i)
+
+    for i in range(round(center_of_map[0]-3),rectangle_grid_index[1]):
+        obstacleX.append(center_of_map[0]-4)
+        obstacleY.append(i)
+
 
     return obstacleX, obstacleY
 
 
 def main():
     print("start!")
-    sx, sy, syaw0 = -0.5, 0, np.deg2rad(90.0)
-    gx, gy, gyaw0 = 3.0, 0, np.deg2rad(-90.0)
+    sx, sy, syaw0 = -0.5, 2, np.deg2rad(90.0)
+    gx, gy, gyaw0 = 3.0, 0, np.deg2rad(180.0)
 
     ox_grid, oy_grid = generate_obstacle_in_grid_map()
     ox, oy = [i * C.XY_RESO for i in ox_grid], [i * C.XY_RESO for i in oy_grid]
@@ -579,7 +585,7 @@ def main():
     path = hybrid_astar_planning(sx, sy, syaw0, gx, gy, gyaw0,
                                  ox_grid, oy_grid, C.XY_RESO, C.YAW_RESO, C.RADIUS)
     t1 = time.time()
-    print("running T: ", t1 - t0)
+    print("running time: ", t1 - t0)
 
     if not path:
         print("Searching failed!")
