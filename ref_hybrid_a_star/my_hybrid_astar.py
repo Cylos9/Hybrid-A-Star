@@ -21,9 +21,12 @@ class C:  # Parameter config
 
     XY_RESO = 0.2  # [m]
     YAW_RESO = np.deg2rad(15.0)  # [rad]
-    MOVE_STEP = 0.4  # [m] path interporate resolution
+    MOVE_STEP = 0.2  # [m] path interporate resolution
     N_STEER = 20.0  # steer command number
-    COLLISION_CHECK_STEP = 5  # skip number for collision check
+    MAX_ANGULAR_VELOCITY = 0.5   # [rad/s] maximum angular velocity
+    MIN_ANGULAR_VELOCITY = -0.5  # [rad/s] minimum angular velocity
+    MAX_CURVATURE_RADIUS = 1.0  # [m] maximum curvature radius
+    COLLISION_CHECK_STEP = 5  # skip number for collision check for reeds-shepp path
     EXTEND_BOUND = 1  # collision check range extended
 
     GEAR_COST = 100.0  # switch back penalty cost
@@ -40,7 +43,6 @@ class C:  # Parameter config
     WB = 0.6  # [m] Wheel base
     TR = 0.2  # [m] Tyre radius
     TW = 0.2  # [m] Tyre width
-    MAX_STEER = 0.6  # [rad] maximum steering angle
 
 class HolonomicNode:
     def __init__(self, x, y, cost, pind):
@@ -362,16 +364,18 @@ def analystic_expantion(node, ngoal, P):
     sx, sy, syaw = node.x[-1], node.y[-1], node.yaw[-1]
     gx, gy, gyaw = ngoal.x[-1], ngoal.y[-1], ngoal.yaw[-1]
 
-    maxc = math.tan(C.MAX_STEER) / C.WB
-    paths = rs.calc_all_paths(sx, sy, syaw, gx, gy, gyaw, maxc, step_size=C.MOVE_STEP)
+    #  Find all possible reeds-shepp paths between current and goal node
+    paths = rs.calc_all_paths(sx, sy, syaw, gx, gy, gyaw, C.MAX_CURVATURE_RADIUS, step_size=C.MOVE_STEP)
 
     if not paths:
         return None
 
+    # Find path with lowest cost considering non-holonomic constraints
     pq = QueuePrior()
     for path in paths:
         pq.put(path, calc_rs_path_cost(path))
 
+    # Find first path in priority queue that is collision free
     while not pq.empty():
         path = pq.get()
         ind = range(0, len(path.x), C.COLLISION_CHECK_STEP)
@@ -415,31 +419,17 @@ def is_collision(x, y, yaw, P):
 def calc_rs_path_cost(rspath):
     cost = 0.0
 
+    # Distance cost
     for lr in rspath.lengths:
         if lr >= 0:
             cost += 1
         else:
             cost += abs(lr) * C.BACKWARD_COST
 
+    # Direction change cost
     for i in range(len(rspath.lengths) - 1):
         if rspath.lengths[i] * rspath.lengths[i + 1] < 0.0:
             cost += C.GEAR_COST
-
-    for ctype in rspath.ctypes:
-        if ctype != "S":
-            cost += C.STEER_ANGLE_COST * abs(C.MAX_STEER)
-
-    nctypes = len(rspath.ctypes)
-    ulist = [0.0 for _ in range(nctypes)]
-
-    for i in range(nctypes):
-        if rspath.ctypes[i] == "R":
-            ulist[i] = -C.MAX_STEER
-        elif rspath.ctypes[i] == "WB":
-            ulist[i] = C.MAX_STEER
-
-    for i in range(nctypes - 1):
-        cost += C.STEER_CHANGE_COST * abs(ulist[i + 1] - ulist[i])
 
     return cost
 
@@ -452,10 +442,9 @@ def calc_hybrid_cost(node, hmap, P):
 
 
 def calc_motion_set():
-    s = np.arange(C.MAX_STEER / C.N_STEER,
-                  C.MAX_STEER, C.MAX_STEER / C.N_STEER)
-
-    steer = list(s) + [0.0] + list(-s)
+    angular_velocities = np.arange(C.MIN_ANGULAR_VELOCITY, C.MAX_ANGULAR_VELOCITY, (C.MAX_ANGULAR_VELOCITY - C.MIN_ANGULAR_VELOCITY) / C.N_STEER)
+    
+    steer = list(angular_velocities) + [0.0] + list(-angular_velocities)
     direc = [1.0 for _ in range(len(steer))] + [-1.0 for _ in range(len(steer))]
     steer = steer + steer
 
