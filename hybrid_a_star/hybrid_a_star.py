@@ -10,10 +10,10 @@ import time
 class Car:
     maxSteerAngle = 0.6
     steerPresion = 10
-    wheelBase = 3.5
-    axleToFront = 4.5
-    axleToBack = 1
-    width = 3
+    wheelBase = 0.6
+    axleToFront = 0.6
+    axleToBack = 0.2
+    width = 0.6
 
 class Cost:
     reverse = 10
@@ -50,17 +50,18 @@ class MapParameters:
         self.obstacleY = obstacleY           # Obstacle y coordinate list
 
 def calculateMapParameters(obstacleX, obstacleY, xyResolution, yawResolution):
-        
-        # calculate min max map grid index based on obstacles in map
-        mapMinX = round(min(obstacleX) / xyResolution)
-        mapMinY = round(min(obstacleY) / xyResolution)
-        mapMaxX = round(max(obstacleX) / xyResolution)
-        mapMaxY = round(max(obstacleY) / xyResolution)
+    # calculate min max map grid index based on obstacles in map
+    mapMinX = round(min(obstacleX))
+    mapMinY = round(min(obstacleY))
+    mapMaxX = round(max(obstacleX))
+    mapMaxY = round(max(obstacleY))
 
-        # create a KDTree to represent obstacles
-        ObstacleKDTree = kd.KDTree([[x, y] for x, y in zip(obstacleX, obstacleY)])
+    # Create a KDTree to represent obstacles
+    # Convert grid coordinates to actual coordinates for KDTree
+    obstacle_coords = [[x * xyResolution, y * xyResolution] for x, y in zip(obstacleX, obstacleY)]
+    ObstacleKDTree = kd.KDTree(obstacle_coords)
 
-        return MapParameters(mapMinX, mapMinY, mapMaxX, mapMaxY, xyResolution, yawResolution, ObstacleKDTree, obstacleX, obstacleY)  
+    return MapParameters(mapMinX, mapMinY, mapMaxX, mapMaxY, xyResolution, yawResolution, ObstacleKDTree, obstacleX, obstacleY)  
 
 def index(Node):
     # Index is a tuple consisting grid index, used for checking if two nodes are near/same
@@ -156,7 +157,10 @@ def isValid(traj, gridIndex, mapParameters):
 
 def collision(traj, mapParameters):
 
-    carRadius = (Car.axleToFront + Car.axleToBack)/2 + 1
+    car_length = Car.axleToFront + Car.axleToBack
+    carRadius = max(car_length/2, Car.width/2)
+    safety_margin = mapParameters.xyResolution
+
     dl = (Car.axleToFront - Car.axleToBack)/2
     for i in traj:
         cx = i[0] + dl * math.cos(i[2])
@@ -172,7 +176,7 @@ def collision(traj, mapParameters):
             dx = xo * math.cos(i[2]) + yo * math.sin(i[2])
             dy = -xo * math.sin(i[2]) + yo * math.cos(i[2])
 
-            if abs(dx) < carRadius and abs(dy) < Car.width / 2 + 1:
+            if abs(dx) < car_length/2 + safety_margin and abs(dy) < Car.width / 2 + safety_margin:
                 return True
 
     return False
@@ -329,90 +333,32 @@ def holonomicCostsWithObstacles(goalNode, mapParameters):
 
     return holonomicCost
 
-def map():
+def generate_obstacle_in_grid_map(xy_resolution):
     # Build Map
     obstacleX, obstacleY = [], []
 
-    for i in range(51):
-        obstacleX.append(i)
-        obstacleY.append(0)
+    rectangle = [-2, 5, -2, 5] # x_min, x_max, y_min, y_max
+    rectangle_grid_index = [round(i/xy_resolution) for i in rectangle] # x_min, x_max, y_min, y_max in grid
 
-    for i in range(51):
-        obstacleX.append(0)
+    for i in range(rectangle_grid_index[0],rectangle_grid_index[1]+1):
+        obstacleX.append(i)
+        obstacleY.append(rectangle_grid_index[2])
+
+        obstacleX.append(i)
+        obstacleY.append(rectangle_grid_index[3])
+
+    for i in range(rectangle_grid_index[2]+1,rectangle_grid_index[3]):
+        obstacleX.append(rectangle_grid_index[0])
         obstacleY.append(i)
 
-    for i in range(51):
-        obstacleX.append(i)
-        obstacleY.append(50)
-
-    for i in range(51):
-        obstacleX.append(50)
+        obstacleX.append(rectangle_grid_index[1])
         obstacleY.append(i)
     
-    for i in range(10,20):
-        obstacleX.append(i)
-        obstacleY.append(30) 
+    center_of_map = [round((rectangle_grid_index[0] + rectangle_grid_index[1])/2), round((rectangle_grid_index[2] + rectangle_grid_index[3])/2)]
 
-    for i in range(30,51):
-        obstacleX.append(i)
-        obstacleY.append(30) 
-
-    for i in range(0,31):
-        obstacleX.append(20)
-        obstacleY.append(i) 
-
-    for i in range(0,31):
-        obstacleX.append(30)
-        obstacleY.append(i) 
-
-    for i in range(40,50):
-        obstacleX.append(15)
+    for i in range(rectangle_grid_index[2]+1, round(center_of_map[1]+1)):
+        obstacleX.append(center_of_map[0])
         obstacleY.append(i)
-
-    for i in range(25,40):
-        obstacleX.append(i)
-        obstacleY.append(35)
-
-    # Parking Map
-    # for i in range(51):
-    #     obstacleX.append(i)
-    #     obstacleY.append(0)
-
-    # for i in range(51):
-    #     obstacleX.append(0)
-    #     obstacleY.append(i)
-
-    # for i in range(51):
-    #     obstacleX.append(i)
-    #     obstacleY.append(50)
-
-    # for i in range(51):
-    #     obstacleX.append(50)
-    #     obstacleY.append(i)
-
-    # for i in range(51):
-    #     obstacleX.append(i)
-    #     obstacleY.append(40)
-
-    # for i in range(0,20):
-    #     obstacleX.append(i)
-    #     obstacleY.append(30) 
-
-    # for i in range(29,51):
-    #     obstacleX.append(i)
-    #     obstacleY.append(30) 
-
-    # for i in range(24,30):
-    #     obstacleX.append(19)
-    #     obstacleY.append(i) 
-
-    # for i in range(24,30):
-    #     obstacleX.append(29)
-    #     obstacleY.append(i) 
-
-    # for i in range(20,29):
-    #     obstacleX.append(i)
-    #     obstacleY.append(24)
 
     return obstacleX, obstacleY
 
@@ -538,18 +484,20 @@ def drawCar(x, y, yaw, color='black'):
     plt.plot(car[0, :], car[1, :], color)
 
 def main():
-
+    xy_resolution = 0.2
     # Set Start, Goal x, y, theta
-    s = [10, 10, np.deg2rad(90)]
-    g = [25, 20, np.deg2rad(90)]
-    # s = [10, 35, np.deg2rad(0)]
-    # g = [22, 28, np.deg2rad(0)]
+    s = [0, 0, np.deg2rad(90)]
+    g = [4, 0, np.deg2rad(-90)]
 
     # Get Obstacle Map
-    obstacleX, obstacleY = map()
+    obstacleX_grid, obstacleY_grid = generate_obstacle_in_grid_map(xy_resolution)
+    
+    obstacleX, obstacleY = [i * xy_resolution for i in obstacleX_grid], [i * xy_resolution for i in obstacleY_grid]
+    plt.plot(obstacleX, obstacleY, "sk")
+    plt.show()
 
     # Calculate map Paramaters
-    mapParameters = calculateMapParameters(obstacleX, obstacleY, 4, np.deg2rad(15.0))
+    mapParameters = calculateMapParameters(obstacleX_grid, obstacleY_grid, xy_resolution, np.deg2rad(15.0))
 
     # Run Hybrid A*
     time_start = time.time()
@@ -578,6 +526,11 @@ def main():
     #     plt.title("Hybrid A*")
 
     # Draw Animated Car
+    
+    print(f'step number: {len(x)}')
+    print(f'x: {x}')
+    print(f'y: {y}')
+    print(f'yaw: {yaw}')
     for k in range(len(x)):
         plt.cla()
         plt.xlim(min(obstacleX), max(obstacleX)) 
