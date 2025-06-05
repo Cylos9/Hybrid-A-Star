@@ -49,17 +49,18 @@ class MapParameters:
         self.obstacleX = obstacleX           # Obstacle x coordinate list
         self.obstacleY = obstacleY           # Obstacle y coordinate list
 
-def calculateMapParameters(obstacleX, obstacleY, xyResolution, yawResolution):
+def calculateMapParameters(obstacleX_grid, obstacleY_grid, xyResolution, yawResolution):
     # calculate min max map grid index based on obstacles in map
-    mapMinX = round(min(obstacleX))
-    mapMinY = round(min(obstacleY))
-    mapMaxX = round(max(obstacleX))
-    mapMaxY = round(max(obstacleY))
+    mapMinX = round(min(obstacleX_grid))
+    mapMinY = round(min(obstacleY_grid))
+    mapMaxX = round(max(obstacleX_grid))
+    mapMaxY = round(max(obstacleY_grid))
 
     # Create a KDTree to represent obstacles
     # Convert grid coordinates to actual coordinates for KDTree
-    obstacle_coords = [[x * xyResolution, y * xyResolution] for x, y in zip(obstacleX, obstacleY)]
-    ObstacleKDTree = kd.KDTree(obstacle_coords)
+    obstacleX = [x * xyResolution for x in obstacleX_grid]
+    obstacleY = [y * xyResolution for y in obstacleY_grid]
+    ObstacleKDTree = kd.KDTree([[x, y] for x, y in zip(obstacleX, obstacleY)])
 
     return MapParameters(mapMinX, mapMinY, mapMaxX, mapMaxY, xyResolution, yawResolution, ObstacleKDTree, obstacleX, obstacleY)  
 
@@ -285,7 +286,7 @@ def holonomicNodeIsValid(neighbourNode, obstacles, mapParameters):
 def holonomicCostsWithObstacles(goalNode, mapParameters):
 
     gridIndex = [round(goalNode.traj[-1][0]/mapParameters.xyResolution), round(goalNode.traj[-1][1]/mapParameters.xyResolution)]
-    gNode =HolonomicNode(gridIndex, 0, tuple(gridIndex))
+    gNode = HolonomicNode(gridIndex, 0, tuple(gridIndex))
 
     obstacles = obstaclesMap(mapParameters.obstacleX, mapParameters.obstacleY, mapParameters.xyResolution)
 
@@ -326,7 +327,10 @@ def holonomicCostsWithObstacles(goalNode, mapParameters):
                     openSet[neighbourNodeIndex] = neighbourNode
                     heapq.heappush(priorityQueue, (neighbourNode.cost, neighbourNodeIndex))
 
-    holonomicCost = [[np.inf for i in range(max(mapParameters.obstacleY))]for i in range(max(mapParameters.obstacleX))]
+    # Create cost matrix using map bounds
+    x_size = mapParameters.mapMaxX - mapParameters.mapMinX + 1
+    y_size = mapParameters.mapMaxY - mapParameters.mapMinY + 1
+    holonomicCost = [[np.inf for _ in range(y_size)] for _ in range(x_size)]
 
     for nodes in closedSet.values():
         holonomicCost[nodes.gridIndex[0]][nodes.gridIndex[1]]=nodes.cost
@@ -368,10 +372,10 @@ def backtrack(startNode, goalNode, closedSet, plt):
     startNodeIndex= index(startNode)
     currentNodeIndex = goalNode.parentIndex
     currentNode = closedSet[currentNodeIndex]
-    x=[]
-    y=[]
-    yaw=[]
-
+    x = []
+    y = []
+    yaw = []
+    
     # Iterate till we reach start node from goal node
     while currentNodeIndex != startNodeIndex:
         a, b, c = zip(*currentNode.traj)
@@ -380,6 +384,7 @@ def backtrack(startNode, goalNode, closedSet, plt):
         yaw += c[::-1]
         currentNodeIndex = currentNode.parentIndex
         currentNode = closedSet[currentNodeIndex]
+
     return x[::-1], y[::-1], yaw[::-1]
 
 def run(s, g, mapParameters, plt):
@@ -493,8 +498,8 @@ def main():
     obstacleX_grid, obstacleY_grid = generate_obstacle_in_grid_map(xy_resolution)
     
     obstacleX, obstacleY = [i * xy_resolution for i in obstacleX_grid], [i * xy_resolution for i in obstacleY_grid]
-    plt.plot(obstacleX, obstacleY, "sk")
-    plt.show()
+    # plt.plot(obstacleX, obstacleY, "sk")
+    # plt.show()
 
     # Calculate map Paramaters
     mapParameters = calculateMapParameters(obstacleX_grid, obstacleY_grid, xy_resolution, np.deg2rad(15.0))
@@ -528,9 +533,6 @@ def main():
     # Draw Animated Car
     
     print(f'step number: {len(x)}')
-    print(f'x: {x}')
-    print(f'y: {y}')
-    print(f'yaw: {yaw}')
     for k in range(len(x)):
         plt.cla()
         plt.xlim(min(obstacleX), max(obstacleX)) 
