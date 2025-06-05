@@ -85,7 +85,7 @@ def holonomicMotionCommands():
     return holonomicMotionCommand
 
 
-def kinematicSimulationNode(currentNode, motionCommand, mapParameters, simulationLength=4, step = 0.8 ):
+def kinematicSimulationNode(currentNode, motionCommand, mapParameters, simulationLength=4, step = 0.2):
 
     # Simulate node using given current Node and Motion Commands
     traj = []
@@ -361,7 +361,7 @@ def generate_obstacle_in_grid_map(xy_resolution):
     center_of_map = [round((rectangle_grid_index[0] + rectangle_grid_index[1])/2), round((rectangle_grid_index[2] + rectangle_grid_index[3])/2)]
 
     for i in range(rectangle_grid_index[2]+1, round(center_of_map[1]+1)):
-        obstacleX.append(center_of_map[0])
+        obstacleX.append(center_of_map[0]-3)
         obstacleY.append(i)
 
     return obstacleX, obstacleY
