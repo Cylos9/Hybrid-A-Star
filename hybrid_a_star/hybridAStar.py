@@ -1,19 +1,20 @@
 import math
+import sys
+import os
 import heapq
 import numpy as np
 import matplotlib.pyplot as plt
 from heapdict import heapdict
 import scipy.spatial.kdtree as kd
 import reeds_shepp as rsCurve
-import time
 
 class Car:
     maxSteerAngle = 0.6
     steerPresion = 10
-    wheelBase = 0.6
-    axleToFront = 0.6
-    axleToBack = 0.2
-    width = 0.6
+    wheelBase = 3.5
+    axleToFront = 4.5
+    axleToBack = 1
+    width = 3
 
 class Cost:
     reverse = 10
@@ -49,20 +50,18 @@ class MapParameters:
         self.obstacleX = obstacleX           # Obstacle x coordinate list
         self.obstacleY = obstacleY           # Obstacle y coordinate list
 
-def calculateMapParameters(obstacleX_grid, obstacleY_grid, xyResolution, yawResolution):
-    # calculate min max map grid index based on obstacles in map
-    mapMinX = round(min(obstacleX_grid))
-    mapMinY = round(min(obstacleY_grid))
-    mapMaxX = round(max(obstacleX_grid))
-    mapMaxY = round(max(obstacleY_grid))
+def calculateMapParameters(obstacleX, obstacleY, xyResolution, yawResolution):
+        
+        # calculate min max map grid index based on obstacles in map
+        mapMinX = round(min(obstacleX) / xyResolution)
+        mapMinY = round(min(obstacleY) / xyResolution)
+        mapMaxX = round(max(obstacleX) / xyResolution)
+        mapMaxY = round(max(obstacleY) / xyResolution)
 
-    # Create a KDTree to represent obstacles
-    # Convert grid coordinates to actual coordinates for KDTree
-    obstacleX = [x * xyResolution for x in obstacleX_grid]
-    obstacleY = [y * xyResolution for y in obstacleY_grid]
-    ObstacleKDTree = kd.KDTree([[x, y] for x, y in zip(obstacleX, obstacleY)])
+        # create a KDTree to represent obstacles
+        ObstacleKDTree = kd.KDTree([[x, y] for x, y in zip(obstacleX, obstacleY)])
 
-    return MapParameters(mapMinX, mapMinY, mapMaxX, mapMaxY, xyResolution, yawResolution, ObstacleKDTree, obstacleX, obstacleY)  
+        return MapParameters(mapMinX, mapMinY, mapMaxX, mapMaxY, xyResolution, yawResolution, ObstacleKDTree, obstacleX, obstacleY)  
 
 def index(Node):
     # Index is a tuple consisting grid index, used for checking if two nodes are near/same
@@ -73,8 +72,7 @@ def motionCommands():
     # Motion commands for a Non-Holonomic Robot like a Car or Bicycle (Trajectories using Steer Angle and Direction)
     direction = 1
     motionCommand = []
-    # for i in np.arange(Car.maxSteerAngle, -(Car.maxSteerAngle + Car.maxSteerAngle/Car.steerPresion), -Car.maxSteerAngle/Car.steerPresion):
-    for i in np.arange(0.6, -(0.6 + 0.6/Car.steerPresion), -0.6/Car.steerPresion):
+    for i in np.arange(Car.maxSteerAngle, -(Car.maxSteerAngle + Car.maxSteerAngle/Car.steerPresion), -Car.maxSteerAngle/Car.steerPresion):
         motionCommand.append([i, direction])
         motionCommand.append([i, -direction])
     return motionCommand
@@ -121,8 +119,9 @@ def reedsSheppNode(currentNode, goalNode, mapParameters):
 
     # Instantaneous Radius of Curvature
     radius = math.tan(Car.maxSteerAngle)/Car.wheelBase
+
     #  Find all possible reeds-shepp paths between current and goal node
-    reedsSheppPaths = rsCurve.calc_all_paths(startX, startY, startYaw, goalX, goalY, goalYaw, radius, mapParameters.xyResolution)
+    reedsSheppPaths = rsCurve.calc_all_paths(startX, startY, startYaw, goalX, goalY, goalYaw, radius, 1)
 
     # Check if reedsSheppPaths is empty
     if not reedsSheppPaths:
@@ -158,10 +157,7 @@ def isValid(traj, gridIndex, mapParameters):
 
 def collision(traj, mapParameters):
 
-    car_length = Car.axleToFront + Car.axleToBack
-    carRadius = max(car_length/2, Car.width/2)
-    safety_margin = mapParameters.xyResolution
-
+    carRadius = (Car.axleToFront + Car.axleToBack)/2 + 1
     dl = (Car.axleToFront - Car.axleToBack)/2
     for i in traj:
         cx = i[0] + dl * math.cos(i[2])
@@ -170,14 +166,15 @@ def collision(traj, mapParameters):
 
         if not pointsInObstacle:
             continue
-
+        
         for p in pointsInObstacle:
             xo = mapParameters.obstacleX[p] - cx
             yo = mapParameters.obstacleY[p] - cy
             dx = xo * math.cos(i[2]) + yo * math.sin(i[2])
             dy = -xo * math.sin(i[2]) + yo * math.cos(i[2])
 
-            if abs(dx) < car_length/2 + safety_margin and abs(dy) < Car.width / 2 + safety_margin:
+            if abs(dx) < carRadius and abs(dy) < Car.width / 2 + 1:
+                print(f'collision at dx: {dx}, dy: {dy}')
                 return True
 
     return False
@@ -286,7 +283,7 @@ def holonomicNodeIsValid(neighbourNode, obstacles, mapParameters):
 def holonomicCostsWithObstacles(goalNode, mapParameters):
 
     gridIndex = [round(goalNode.traj[-1][0]/mapParameters.xyResolution), round(goalNode.traj[-1][1]/mapParameters.xyResolution)]
-    gNode = HolonomicNode(gridIndex, 0, tuple(gridIndex))
+    gNode =HolonomicNode(gridIndex, 0, tuple(gridIndex))
 
     obstacles = obstaclesMap(mapParameters.obstacleX, mapParameters.obstacleY, mapParameters.xyResolution)
 
@@ -327,42 +324,97 @@ def holonomicCostsWithObstacles(goalNode, mapParameters):
                     openSet[neighbourNodeIndex] = neighbourNode
                     heapq.heappush(priorityQueue, (neighbourNode.cost, neighbourNodeIndex))
 
-    # Create cost matrix using map bounds
-    x_size = mapParameters.mapMaxX - mapParameters.mapMinX + 1
-    y_size = mapParameters.mapMaxY - mapParameters.mapMinY + 1
-    holonomicCost = [[np.inf for _ in range(y_size)] for _ in range(x_size)]
+    holonomicCost = [[np.inf for i in range(max(mapParameters.obstacleY))]for i in range(max(mapParameters.obstacleX))]
 
     for nodes in closedSet.values():
         holonomicCost[nodes.gridIndex[0]][nodes.gridIndex[1]]=nodes.cost
 
     return holonomicCost
 
-def generate_obstacle_in_grid_map(xy_resolution):
+def map():
     # Build Map
     obstacleX, obstacleY = [], []
 
-    rectangle = [-2, 5, -2, 5] # x_min, x_max, y_min, y_max
-    rectangle_grid_index = [round(i/xy_resolution) for i in rectangle] # x_min, x_max, y_min, y_max in grid
-
-    for i in range(rectangle_grid_index[0],rectangle_grid_index[1]+1):
+    for i in range(51):
         obstacleX.append(i)
-        obstacleY.append(rectangle_grid_index[2])
+        obstacleY.append(0)
 
-        obstacleX.append(i)
-        obstacleY.append(rectangle_grid_index[3])
-
-    for i in range(rectangle_grid_index[2]+1,rectangle_grid_index[3]):
-        obstacleX.append(rectangle_grid_index[0])
+    for i in range(51):
+        obstacleX.append(0)
         obstacleY.append(i)
 
-        obstacleX.append(rectangle_grid_index[1])
+    for i in range(51):
+        obstacleX.append(i)
+        obstacleY.append(50)
+
+    for i in range(51):
+        obstacleX.append(50)
         obstacleY.append(i)
     
-    center_of_map = [round((rectangle_grid_index[0] + rectangle_grid_index[1])/2), round((rectangle_grid_index[2] + rectangle_grid_index[3])/2)]
+    for i in range(10,20):
+        obstacleX.append(i)
+        obstacleY.append(30) 
 
-    for i in range(rectangle_grid_index[2]+1, round(center_of_map[1]+1)):
-        obstacleX.append(center_of_map[0])
+    for i in range(30,51):
+        obstacleX.append(i)
+        obstacleY.append(30) 
+
+    for i in range(0,31):
+        obstacleX.append(20)
+        obstacleY.append(i) 
+
+    for i in range(0,31):
+        obstacleX.append(30)
+        obstacleY.append(i) 
+
+    for i in range(40,50):
+        obstacleX.append(15)
         obstacleY.append(i)
+
+    for i in range(25,40):
+        obstacleX.append(i)
+        obstacleY.append(35)
+
+    # Parking Map
+    # for i in range(51):
+    #     obstacleX.append(i)
+    #     obstacleY.append(0)
+
+    # for i in range(51):
+    #     obstacleX.append(0)
+    #     obstacleY.append(i)
+
+    # for i in range(51):
+    #     obstacleX.append(i)
+    #     obstacleY.append(50)
+
+    # for i in range(51):
+    #     obstacleX.append(50)
+    #     obstacleY.append(i)
+
+    # for i in range(51):
+    #     obstacleX.append(i)
+    #     obstacleY.append(40)
+
+    # for i in range(0,20):
+    #     obstacleX.append(i)
+    #     obstacleY.append(30) 
+
+    # for i in range(29,51):
+    #     obstacleX.append(i)
+    #     obstacleY.append(30) 
+
+    # for i in range(24,30):
+    #     obstacleX.append(19)
+    #     obstacleY.append(i) 
+
+    # for i in range(24,30):
+    #     obstacleX.append(29)
+    #     obstacleY.append(i) 
+
+    # for i in range(20,29):
+    #     obstacleX.append(i)
+    #     obstacleY.append(24)
 
     return obstacleX, obstacleY
 
@@ -372,10 +424,10 @@ def backtrack(startNode, goalNode, closedSet, plt):
     startNodeIndex= index(startNode)
     currentNodeIndex = goalNode.parentIndex
     currentNode = closedSet[currentNodeIndex]
-    x = []
-    y = []
-    yaw = []
-    
+    x=[]
+    y=[]
+    yaw=[]
+
     # Iterate till we reach start node from goal node
     while currentNodeIndex != startNodeIndex:
         a, b, c = zip(*currentNode.traj)
@@ -384,7 +436,6 @@ def backtrack(startNode, goalNode, closedSet, plt):
         yaw += c[::-1]
         currentNodeIndex = currentNode.parentIndex
         currentNode = closedSet[currentNodeIndex]
-
     return x[::-1], y[::-1], yaw[::-1]
 
 def run(s, g, mapParameters, plt):
@@ -489,26 +540,21 @@ def drawCar(x, y, yaw, color='black'):
     plt.plot(car[0, :], car[1, :], color)
 
 def main():
-    xy_resolution = 0.2
+
     # Set Start, Goal x, y, theta
-    s = [-0.5, 0, np.deg2rad(90)]
-    g = [2.5, 0, np.deg2rad(-90)]
+    s = [10, 10, np.deg2rad(90)]
+    g = [25, 20, np.deg2rad(90)]
+    # s = [10, 35, np.deg2rad(0)]
+    # g = [22, 28, np.deg2rad(0)]
 
     # Get Obstacle Map
-    obstacleX_grid, obstacleY_grid = generate_obstacle_in_grid_map(xy_resolution)
-    
-    obstacleX, obstacleY = [i * xy_resolution for i in obstacleX_grid], [i * xy_resolution for i in obstacleY_grid]
-    # plt.plot(obstacleX, obstacleY, "sk")
-    # plt.show()
+    obstacleX, obstacleY = map()
 
     # Calculate map Paramaters
-    mapParameters = calculateMapParameters(obstacleX_grid, obstacleY_grid, xy_resolution, np.deg2rad(15.0))
+    mapParameters = calculateMapParameters(obstacleX, obstacleY, 4, np.deg2rad(15.0))
 
     # Run Hybrid A*
-    time_start = time.time()
     x, y, yaw = run(s, g, mapParameters, plt)
-    time_end = time.time()
-    print(f"Time taken: {time_end - time_start} seconds")
 
     # Draw Start, Goal Location Map and Path
     # plt.arrow(s[0], s[1], 1*math.cos(s[2]), 1*math.sin(s[2]), width=.1)
@@ -529,10 +575,8 @@ def main():
     #     drawCar(x[k], y[k], yaw[k])
     #     plt.arrow(x[k], y[k], 1*math.cos(yaw[k]), 1*math.sin(yaw[k]), width=.1)
     #     plt.title("Hybrid A*")
-
+    print(f'length of x: {len(x)}')
     # Draw Animated Car
-    
-    print(f'step number: {len(x)}')
     for k in range(len(x)):
         plt.cla()
         plt.xlim(min(obstacleX), max(obstacleX)) 
